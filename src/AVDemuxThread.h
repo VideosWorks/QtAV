@@ -27,6 +27,7 @@
 #include <QtCore/QThread>
 #include <QtCore/QRunnable>
 #include "PacketBuffer.h"
+#include <QTimer>
 
 namespace QtAV {
 
@@ -46,7 +47,7 @@ public:
     AVThread* videoThread();
     void stepForward(); // show next video frame and pause
     void stepBackward();
-    void seek(qint64 pos, SeekType type); //ms
+    void seek(qint64 external_pos, qint64 pos, SeekType type); //ms
     //AVDemuxer* demuxer
     bool isPaused() const;
     bool isEnd() const;
@@ -59,6 +60,8 @@ public:
     MediaEndAction mediaEndAction() const;
     void setMediaEndAction(MediaEndAction value);
     bool waitForStarted(int msec = -1);
+    qint64 lastSeekPos();
+    bool hasSeekTasks();
 Q_SIGNALS:
     void requestClockPause(bool value);
     void mediaStatusChanged(QtAV::MediaStatus);
@@ -67,9 +70,11 @@ Q_SIGNALS:
     void stepFinished();
     void internalSubtitlePacketRead(int index, const QtAV::Packet& packet);
 private slots:
+    void finishedStepBackward();
     void seekOnPauseFinished();
     void frameDeliveredOnStepForward();
     void eofDecodedOnStepForward();
+    void stepForwardDone();
     void onAVThreadQuit();
 
 protected:
@@ -84,7 +89,7 @@ private:
     void setAVThread(AVThread *&pOld, AVThread* pNew);
     void newSeekRequest(QRunnable *r);
     void processNextSeekTask();
-    void seekInternal(qint64 pos, SeekType type); //must call in AVDemuxThread
+    void seekInternal(qint64 pos, SeekType type, qint64 external_pos = std::numeric_limits < qint64 >::min()); //must call in AVDemuxThread
     void pauseInternal(bool value);
 
     bool paused;
@@ -100,7 +105,11 @@ private:
     QMutex buffer_mutex;
     QWaitCondition cond;
     BlockingQueue<QRunnable*> seek_tasks;
-
+    qint64 last_seek_pos;
+    QRunnable *current_seek_task;
+    bool stepping;
+    qint64 stepping_timeout_time;
+        
     QSemaphore sem;
     QMutex next_frame_mutex;
     int clock_type; // change happens in different threads(direct connection)
